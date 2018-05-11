@@ -33,5 +33,5 @@ class Servidor:
 
 if __name__ == '__main__':
 
-    s = Servidor(sys.argv[1])
+    s = Servidor(int(sys.argv[1]))
     s.exec_()
