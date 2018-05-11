@@ -23,5 +23,5 @@ class Cliente:
 
 if __name__ == '__main__':
 
-    c = Cliente(sys.argv[1], sys.argv[2])
+    c = Cliente(sys.argv[1], int(sys.argv[2]))
     c.exec_(sys.argv[2])
