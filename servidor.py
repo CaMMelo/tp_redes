@@ -28,10 +28,9 @@ class Servidor:
                 data = f.buffer.read(self.bufsiz)
 
             self.sock.sendto(data, sender)
-            # print('I last send a', data, 'to', sender)
 
 
 if __name__ == '__main__':
 
-    s = Servidor()
+    s = Servidor(sys.argv[1])
     s.exec_()
