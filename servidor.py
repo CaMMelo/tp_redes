@@ -22,7 +22,7 @@ class Servidor:
 
             while data:
 
-                time.sleep(0.005)
+                time.sleep(0.0001)
 
                 self.sock.sendto(data, sender)
                 data = f.buffer.read(self.bufsiz)
