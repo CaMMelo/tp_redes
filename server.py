@@ -2,7 +2,6 @@ import socket
 import threading
 import pickle
 import time
-# from globals import PORT
 import globals
 
 class Server:
@@ -23,8 +22,8 @@ class Server:
 
     def sendto_client(self, client, client_addr, file):
 
-        window_size = 100
-        pack_size = 100
+        window_size = 1000
+        pack_size = 1024
 
         with open(file, 'rb') as ifile:
 
@@ -49,6 +48,7 @@ class Server:
                 n = 0
 
                 while (n < window_size) and (current < len(video_packs)):
+                    time.sleep(0.0009)
                     udp_sock.sendto(pickle.dumps(video_packs[current]), client_addr)
                     n += 1
                     current += 1
@@ -79,6 +79,8 @@ class Server:
             # enviar flag de fim de video
 
     def handle_client(self, client):
+
+        print(client)
 
         while True:
 

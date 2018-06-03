@@ -1,7 +1,6 @@
 import socket
 import pickle
 import sys
-# from globals import PORT
 import globals
 
 class Client:
@@ -16,7 +15,7 @@ class Client:
     def request_file(self, filename):
 
         udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udp_sock.bind(('', 0)) # abre em uma porta aleatoria
+        udp_sock.bind(('192.168.43.12', 0)) # abre em uma porta aleatoria
 
         data = (globals.FILE_REQUEST, udp_sock.getsockname(), filename)
 
@@ -29,7 +28,7 @@ class Client:
         last_ack = 0
         pos = 0
 
-        rec = 100
+        rec = 600
 
         while True:
 
@@ -37,7 +36,7 @@ class Client:
 
             while n < rec:
 
-                pacote, server_addr = udp_sock.recvfrom( 1024 )
+                pacote, server_addr = udp_sock.recvfrom( 2048 )
                 pacote = pickle.loads(pacote)
 
                 n += 1
@@ -83,5 +82,5 @@ class Client:
     def regress_transmission(self):
         pass
 
-c = Client()
-c.request_file('Animals.mpeg')
+c = Client(host='192.168.43.56')
+c.request_file('futurama.avi')
