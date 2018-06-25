@@ -3,6 +3,8 @@ import threading
 import pickle
 import time
 import globals
+import os
+import ffprobe3
 
 class Server:
 
@@ -13,6 +15,7 @@ class Server:
     def __init__(self, port=globals.PORT, buffersize=1024):
 
         self.addr = ('', port)
+        # self.addr = ('', port)
         self.buffersize = buffersize
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -20,71 +23,46 @@ class Server:
 
     # requisições do canal de controle
 
-    def sendto_client(self, client, client_addr, file):
+    def sendto_client(self, client, client_udp_sock_addr, filename, tamanho_do_pacote, atraso):
+        ''' thread para enviar um arquivo de vídeo para um cliente '''
 
-        window_size = 1000
-        pack_size = 1024
+        # tcp_sock = self.clients[client][0]
+        udp_sock = self.clients[client][1]
 
-        with open(file, 'rb') as ifile:
+        tamanho_do_pacote = int(tamanho_do_pacote)
 
-            udp_sock = self.clients[client][1]
+        with open(filename, 'rb') as infile:
 
-            video_packs = []
+            buffer = {}
 
-            frame = ifile.read(pack_size)
-            x = 0
+            payload = infile.read(tamanho_do_pacote)
+            i = 0
 
-            while frame:
-                video_packs.append((x, frame))
-                frame = ifile.read(pack_size)
-                x += 1
+            while payload:
 
-            init = 0
-            current = 0
+                buffer[i] = payload
 
-            while True:
+                udp_sock.sendto( pickle.dumps((i, payload)), client_udp_sock_addr)
+                time.sleep(atraso)
 
-                # enviar pacotes
-                n = 0
+                i += 1
+                payload = infile.read(tamanho_do_pacote)
 
-                while (n < window_size) and (current < len(video_packs)):
-                    time.sleep(0.0009)
-                    udp_sock.sendto(pickle.dumps(video_packs[current]), client_addr)
-                    n += 1
-                    current += 1
+            udp_sock.sendto(b'', client_udp_sock_addr)
 
-                # esperar acks
-                udp_sock.settimeout(1)
+        print('finalizado')
 
-                try:
-
-                    data, _ = udp_sock.recvfrom(self.buffersize)
-
-                    if data:
-                        data = pickle.loads(data)
-                        init = data[0] + 1
-
-                except:
-
-                    pass
-
-                if init == len(video_packs):
-                    break
-
-                if current == len(video_packs):
-                    print('finished')
-                    current = init
-                    break
-
-            # enviar flag de fim de video
 
     def handle_client(self, client):
 
-        print(client)
+        ''' Trata as requisições TCP de um determinado cliente '''
+
+        cli = self.clients[client][0]
 
         while True:
 
-            data = self.clients[client][0].recv(self.buffersize)
+            data = cli.recv(self.buffersize)
+
 
             if data:
 
@@ -92,11 +70,34 @@ class Server:
 
                 if request[0] == globals.FILE_REQUEST:
 
-                    t = threading.Thread(target=self.sendto_client, args=(client, request[1], request[2]))
+                    start = time.time()
+                    cli.send(b'0'*self.buffersize)
+                    cli.recv(self.buffersize)
+                    rtt = self.buffersize / ((time.time() - start) / 2) # quantos bytes por segundo
+
+                    metadata = ffprobe3.FFProbe(request[2]).video[0]
+
+                    # filesize = os.stat(request[2]).st_size  # em bytes
+
+                    bit_rate = int(metadata.bit_rate) / 8   # em bytes por segundo
+                    # duration = metadata.duration_seconds()  # em segundos
+
+                    tamanho_do_pacote = int(bit_rate // 1024) # tamanho do pacote
+                    atraso = 0 if ((rtt - tamanho_do_pacote) <= 0) else ((rtt - tamanho_do_pacote) / rtt / 1000)
+
+                    buffer_inicial = 1024
+                    buffer_leitura = 200
+
+                    print(buffer_inicial, buffer_leitura)
+
+                    cli.send(pickle.dumps((tamanho_do_pacote, buffer_inicial, buffer_leitura)))
+
+                    t = threading.Thread(target=self.sendto_client, args=(client, request[1], request[2], tamanho_do_pacote, atraso))
                     t.start()
 
 
     def accept(self):
+        ''' aceita uma conexão TCP e envia delega uma thread para manipular o usuário '''
 
         self.sock.listen(100)
 
@@ -109,9 +110,3 @@ class Server:
 
             t = threading.Thread(target=self.handle_client, args=(addr, ))
             t.start()
-
-
-
-
-s = Server()
-s.accept()
