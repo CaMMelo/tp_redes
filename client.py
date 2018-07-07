@@ -1,9 +1,28 @@
+#!/usr/bin/python3
+
+from tkinter import *
 import socket
 import pickle
 import sys
 import globals
 import time
 import threading
+import os
+import io
+from math import ceil
+
+class ControlWindow(Frame):
+
+    def __init__(self, client=None, master=None):
+        Frame.__init__(self, master)
+
+        self.master = master
+
+        botao = Button(master, text="Pause", command = client.pause_transmistion)
+        botao.pack()
+
+        botao = Button(master, text="Continue", command = client.continue_transmission)
+        botao.pack()
 
 class Client:
 
@@ -16,32 +35,46 @@ class Client:
 
         self.buffersize = 1024
 
-    def output(self, buffer):
+    def output(self, consume):
         ''' thread para imprimir um buffer na saida padrão '''
-        for x in buffer:
-            sys.stdout.buffer.write(x[1])
 
-    def request_file(self, filename):
-        ''' faz a requisição via TCP e recebe o arquivo via UDP '''
+        self.lock.acquire()
 
-        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udp_sock.bind(('', 0)) # abre em uma porta aleatoria
+        pos = self.video.tell()
+        self.video.seek(self.ptr, 0)
+        buffer = self.video.read(ceil(consume))
+        self.video.seek(pos)
 
-        data = (globals.FILE_REQUEST, udp_sock.getsockname(), filename)
-        self.sock.send(pickle.dumps(data))
+        if buffer and not self.paused:
+            sys.stdout.buffer.write(buffer)
+            self.ptr += ceil(consume)
 
-        # combinar: tamanho_do_pacote, tamanho_do_buffer, tempo_de_reenvio
+        self.lock.release()
 
-        self.sock.recv(self.buffersize)
-        self.sock.send(b'0'*self.buffersize)
+        time.sleep(1)
+        t = threading.Thread(target=self.output, args=(consume, ))
+        t.start()
+        t.join()
 
-        data = self.sock.recv(self.buffersize)
-        tamanho_do_pacote, buffer_inicial, buffer_leitura = pickle.loads(data)
+    def append_to_file(self, buffer):
+
+        self.lock.acquire()
+
+        for pct in buffer:
+            self.video.write(pct[1])
+
+        self.lock.release()
+
+    def recv_file(self, udp_sock, tamanho_do_pacote, buffer_inicial, buffer_leitura, bit_rate):
+
         buffersize = buffer_inicial
 
         # começa a receber o vídeo
 
-        video = [] # o video começa vazio
+        self.video = io.BytesIO()
+        self.ptr = 0
+        self.paused = False
+        self.lock = threading.Lock()
 
         while True:
 
@@ -57,35 +90,57 @@ class Client:
 
                 buffer.append(pacote)
 
-                buffer.sort(key=lambda x: x[0])
-                video += buffer
+            buffer.sort(key=lambda x: x[0])
 
-                if len(buffer) == buffer_inicial:
-                    buffersize = buffer_leitura
-
-            t = threading.Thread(target=self.output, args=(buffer,))
+            t = threading.Thread(target=self.append_to_file, args=(buffer,))
             t.start()
             t.join()
 
+            if len(buffer) == buffer_inicial:
+                buffersize = buffer_leitura
+
+                t = threading.Thread(target=self.output, args=(bit_rate, ))
+                t.start()
+
         udp_sock.close()
 
-
     # tcp
-    def request_available_files(self):
-        pass
+    def request_file(self, filename):
+        ''' faz a requisição via TCP e recebe o arquivo via UDP '''
+
+        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp_sock.bind(('192.168.43.12', 0)) # abre em uma porta aleatoria
+
+        data = (globals.FILE_REQUEST, udp_sock.getsockname(), filename)
+        self.sock.send(pickle.dumps(data))
+
+        # combinar: tamanho_do_pacote, tamanho_do_buffer, tempo_de_reenvio
+
+        self.sock.recv(self.buffersize)
+        self.sock.send(b'0'*self.buffersize)
+
+        data = self.sock.recv(self.buffersize)
+        tamanho_do_pacote, buffer_inicial, buffer_leitura, bit_rate = pickle.loads(data)
+
+        t = threading.Thread(target=self.recv_file, args=(udp_sock, tamanho_do_pacote, buffer_inicial, buffer_leitura, bit_rate))
+        t.start()
+
+        root = Tk()
+        app = ControlWindow(self, root)
+        root.mainloop()
 
     # comandos de controle de fluxo
     def pause_transmistion(self):
-        pass
+        self.paused = True
 
     def continue_transmission(self):
-        pass
+        self.paused = False
 
     def stop_transmission(self):
         pass
 
-    def advance_transmission(self):
+    def advance_transmission(self, nbytes):
         pass
 
-    def regress_transmission(self):
-        pass
+    def regress_transmission(self, nbytes):
+        self.ptr -= nbytes

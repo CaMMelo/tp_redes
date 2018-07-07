@@ -1,5 +1,5 @@
 import server
 from sys import argv
 
-s = server.Server(int(argv[1]))
+s = server.Server(argv[1], int(argv[2]))
 s.accept()
